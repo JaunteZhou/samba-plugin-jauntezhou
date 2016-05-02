@@ -339,9 +339,9 @@ read_file_hook(files_struct *fsp,
 */
 		memcpy((data+ret_sum), /*de*/encrypted_data, file_n_temp);
 
-		ret_sum += ret;
+		ret_sum += ret + sizeof(uint8_t);
 		file_pos_last += ret + sizeof(uint8_t);
-		file_n_rest -= ret;
+		file_n_rest -= (ret + sizeof(uint8_t));
 
 		pos_flag += 1;
 
