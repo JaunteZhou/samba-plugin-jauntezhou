@@ -250,13 +250,13 @@ read_file_hook(files_struct *fsp,
 	uint8_t	 	file_n_temp = 0;
 	size_t		file_n_rest = n;
 	size_t	 	file_n_src = n;
-	size_t	 	num_block;
+	size_t	 	num_block_rdd = 0;
+	size_t	 	num_block_rding = 0;
 //	uint8_t	 	file_n_last = 0;
 
 	off_t	 	file_pos_src = pos;
 	off_t	 	file_pos_last;
 
-	int pos_flag = 0;
 
 	int num_bits = 0;
 	//128bits en_key.  
@@ -275,12 +275,12 @@ read_file_hook(files_struct *fsp,
 
 	log_file("/home/jauntezhou/Desktop/rfh_f0.txt", "start read_file_hook ~\n");
 	
-//	num_block = (file_pos_src + 1) / BLOCK_SIZE;
-//	file_pos_last = num_block * (BLOCK_SIZE + sizeof(uint8_t)) - 1;
-/*
-	file_n_temp = n;
-*/	
-	file_pos_last = pos;
+	num_block_rdd = (file_pos_src) / BLOCK_SIZE;
+	file_pos_last = num_block_rdd * (BLOCK_SIZE + sizeof(uint8_t));
+
+//	file_n_temp = n;
+	
+//	file_pos_last = pos;
 	
 
 //	ret = SMB_VFS_PREAD(fsp, /*encrypted_*/data, file_n_temp, file_pos_last/*+sizeof(uint8_t)*/);
@@ -299,7 +299,7 @@ read_file_hook(files_struct *fsp,
 			log_file("/home/jauntezhou/Desktop/rfh_e0.txt", "read error: cannot read next length !~\n");
 			return -1;
 		}
-		if ( file_n_temp > file_n_rest && pos_flag ){
+		if ( file_n_temp > file_n_rest && num_block_rding ){
 			log_file("/home/jauntezhou/Desktop/rfh_e1.txt", "read error: read more length than need !~\n");
 			break;
 		}
@@ -339,16 +339,17 @@ read_file_hook(files_struct *fsp,
 */
 		memcpy((data+ret_sum), /*de*/encrypted_data, file_n_temp);
 
-		ret_sum += ret + sizeof(uint8_t);
+		ret_sum += ret;
 		file_pos_last += ret + sizeof(uint8_t);
 		file_n_rest -= (ret + sizeof(uint8_t));
 
-		pos_flag += 1;
+		num_block_rding += 1;
 
 		free(encrypted_data);
 		free(decrypted_data);
 	}
 
+	fsp->fnum -= num_block_rding;
 	log_file("/home/jauntezhou/Desktop/rfh_f4.txt", "end read file hook ~\n");
 
 	return ret_sum;
