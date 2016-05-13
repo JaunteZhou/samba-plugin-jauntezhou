@@ -189,7 +189,7 @@ write_file_hook(files_struct *fsp,
 
 
 	while ( file_n_rest > 0 ) {
-		log_file( "WFH :\t write_file_hook Start write data !\n\n" );
+		//log_file( "WFH :\t write_file_hook Start write data !\n\n" );
 
 		if ( file_n_rest >= BLOCK_SIZE ) {
 			file_n_temp = BLOCK_SIZE;
@@ -217,7 +217,7 @@ write_file_hook(files_struct *fsp,
 			//从文件开头写
     			ret = vfs_write_data(NULL, fsp, encrypted_data, BLOCK_SIZE + sizeof(uint8_t));
 		} else {
-			log_file( "WFH :\t Start write from middle !\n\n" );
+			//log_file( "WFH :\t Start write from middle !\n\n" );
     			//从偏移量‘pos’开始写
 			ret = vfs_pwrite_data(NULL, fsp, encrypted_data, BLOCK_SIZE + sizeof(uint8_t), file_pos_last);
 		}
@@ -236,7 +236,7 @@ write_file_hook(files_struct *fsp,
 		file_n_rest -= file_n_temp;
 		file_pos_last += ret;
 
-		log_file( "WFH :\t Start write a part !\n\n" );
+		//log_file( "WFH :\t Start write a part !\n\n" );
 
 		num_block_wting += 1;
 
@@ -342,7 +342,7 @@ read_file_hook(files_struct *fsp,
 		memset(decrypted_data, 0, BLOCK_SIZE);
 
 
-		log_file( "RFH :\t start PREAD ~\n\n" );
+		//log_file( "RFH :\t start PREAD ~\n\n" );
 
 		//Read Encrypted Data
 		ret = SMB_VFS_PREAD(fsp, encrypted_data, BLOCK_SIZE, file_pos_last + sizeof(uint8_t));
@@ -360,8 +360,8 @@ read_file_hook(files_struct *fsp,
 			return -1;
 		}
 
-		log_file( "RFH :\t start decrypted ~\n\n" );
-		log_file( encrypted_data );
+		//log_file( "RFH :\t start decrypted ~\n\n" );
+		//log_file( encrypted_data );
 
 
 		AES_decrypt(encrypted_data, decrypted_data, &de_key);

@@ -69,7 +69,7 @@ ssize_t read_key(char *un, char *fn, unsigned char *key)
 	return ret;
 }
 
-ssize_t rsa_encrypt( unsigned char *str, unsigned char *str_en ){
+ssize_t rsa_encrypt( unsigned char *str, unsigned char *en_str ){
 	RSA *p_rsa;
 	FILE *fp;
 	int str_len,rsa_len;
@@ -91,10 +91,10 @@ ssize_t rsa_encrypt( unsigned char *str, unsigned char *str_en ){
 	str_len = strlen(str);
 	rsa_len = RSA_size(p_rsa);
 
-	//str_en = (unsigned char *)malloc(rsa_len+1);
-	//memset(p_en,0,rsa_len+1);
+	//en_str = (unsigned char *)malloc(rsa_len+1);
+	//memset( en_str, 0, rsa_len+1 );
 
-	ret = RSA_public_encrypt( rsa_len, str, str_en, p_rsa, RSA_NO_PADDING );
+	ret = RSA_public_encrypt( rsa_len, str, en_str, p_rsa, RSA_NO_PADDING );
 	if( ret < 0 ){
 		printf("IN FUNCTION \"rsa_encrypt\" : encrypt str error !!!\n");
 		return -1;
@@ -119,6 +119,7 @@ int main()
 	char *host_name;
 	char *file_name;
 	unsigned char *key;
+	//unsigned char *en_key;
 
 	KeyRes_T *res;
 	ssize_t res_len;
@@ -192,6 +193,9 @@ int main()
 		memcpy( file_name, req->buf+req->un_len, req->fn_len );
 		memset( key, 0, KEY_SIZE );
 
+		free(req);
+		req = NULL;
+
 		// read key from file !
 		ret = read_key( host_name, file_name, key );
 		if ( ret == -1 ){
@@ -199,29 +203,31 @@ int main()
 			return -1;
 		}
 
-		free(req);
 		free(host_name);
 		free(file_name);
-		req = NULL;
 		host_name = NULL;
 		file_name = NULL;
 
-		printf("key : %s\r\n",key);
+		printf( "key : %s\r\n", key );
 		res = (KeyRes_T *)malloc(KEY_RES_MAX);
 		memset( (unsigned char *)res, 0, KEY_RES_MAX );
 
-		res->type = KEY_RES_TYPE;
-
-		memcpy( res->buf, key, KEY_SIZE );
+		//memcpy( res->buf, key, KEY_SIZE );
 		// encrypt key to res->buf by RSA
-//		ret = rsa_encrypt( key, res->buf );
-//		if( -1 == ret ){
-//			printf("key_encrypted error!!!\n");
-//			close(nfp);
-//			continue;
-//		}
+		ret = rsa_encrypt( key, res->buf );
+		if( -1 == ret || EN_KEY_SIZE != ret ){
+			printf("key_encrypted error!!!\n");
+			close(nfp);
+			continue;
+		}
+		free(key);
+		key = NULL;
 
+		printf("en_key : %s\n", res->buf);
+
+		res->type = KEY_RES_TYPE;
 		res->buf_len = ret;
+		//memcpy( res->buf, en_key, EN_KEY_SIZE );
 
 		res_len = 1+1+res->buf_len;
 
@@ -231,11 +237,14 @@ int main()
 			printf("write fail!\r\n");
 			return -1;
 		}
+		if( res_len != ret ){
+			printf("write error ! not long enough !\r\n");
+		}
 		printf("write ok!\r\n");
 
-		free(key);
-		free(res);
-		key = NULL;
+		//free(en_key);
+		//en_key = NULL;
+		free(res);		
 		res = NULL;
 		close(nfp);
 	}

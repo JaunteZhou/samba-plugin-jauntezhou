@@ -29,7 +29,7 @@ ssize_t log_file ( char *log_data ) {
 	return 1;
 }
 
-ssize_t rsa_decrypt( unsigned char *en_str, unsigned char *str_de ){
+ssize_t rsa_decrypt( unsigned char *en_str, unsigned char *de_str ){
 	RSA *p_rsa;
 	FILE *fp;
 	int rsa_len;
@@ -48,10 +48,10 @@ ssize_t rsa_decrypt( unsigned char *en_str, unsigned char *str_de ){
 	}
 	rsa_len = RSA_size( p_rsa );
 
-	str_de = (unsigned char *)malloc(rsa_len+1);
-	memset( str_de, 0, rsa_len+1 );
+	de_str = (unsigned char *)malloc(rsa_len+1);
+	memset( de_str, 0, rsa_len+1 );
 
-	ret = RSA_private_decrypt( rsa_len, en_str, str_de, p_rsa, RSA_NO_PADDING );
+	ret = RSA_private_decrypt( rsa_len, en_str, de_str, p_rsa, RSA_NO_PADDING );
 	if( ret < 0 ){
 		return -1;
 	}
@@ -72,7 +72,7 @@ ssize_t get_key_from_keyserver( files_struct *fsp, unsigned char *key )
 	KeyRes_T *res;
 	ssize_t res_len;
 
-	unsigned char *key_en;
+	unsigned char *de_key;
 
 	struct sockaddr_in s_add,c_add; // 存储服务端和本端的ip、端口等信息结构体
 	unsigned short portnum = SERVER_PORT;  // 服务端使用的通信端口，可以更改，需和服务端相同
@@ -140,20 +140,20 @@ ssize_t get_key_from_keyserver( files_struct *fsp, unsigned char *key )
 	res = (KeyRes_T *)malloc(KEY_RES_MAX);
 	memset( (unsigned char *)res, 0, KEY_RES_MAX );
 
-//	key_en = (unsigned char *)malloc(KEY_EN_SIZE);
-//	memset( key_en, 0, KEY_EN_SIZE );		//128
+	//de_key = (unsigned char *)malloc(KEY_SIZE);
+	//memset( de_key, 0, KEY_SIZE );
 
 	// 连接成功,从服务端接收字符
 	res_len = read(cfd, (unsigned char *)res, KEY_RES_MAX);
 	if( -1 == res_len ){
 		log_file("read data fail !\r\n");
 		return -1;
-	} else if ( res_len != 1+1+KEY_SIZE ){
-		log_file("read data note long enough !\r\n");
+	} else if ( res_len != 1+1+EN_KEY_SIZE ){
+		log_file("read data not long enough !\r\n");
 		return -1;
 	}
 	
-	if ( res->buf_len != KEY_SIZE ){
+	if ( res->buf_len != EN_KEY_SIZE ){
 		log_file("buf_len wrong!!!\r\n");
 	}
 
@@ -163,25 +163,22 @@ ssize_t get_key_from_keyserver( files_struct *fsp, unsigned char *key )
 	}
 	log_file("read ok\r\nREC:\r\n");
 
-	memcpy( key/*_en*/, res->buf, KEY_SIZE );
-//	strcpy( key, res->buf );
-
 	log_file( res->buf );
 	log_file( key );
 	// rsa decrypt
-//	ret = rsa_decrypt( key_en, key );
-//	if( ret != KEY_SIZE ){
-//		printf("key length error!\n");
-//		return -1;
-//	}
-//	printf( "after decrypt:%s\n", key );
-
+	ret = rsa_decrypt( res->buf, de_key );
 	free(res);
-//	free(key_en);
 	res = NULL;
-//	key_en = NULL;
+	if( ret != KEY_SIZE ){
+		printf("key length error!\n");
+		return -1;
+	}
+	memcpy( key, de_key, KEY_SIZE );
+	printf( "after decrypt:%s\n", key );
 
-	//getchar(); // 此句为使程序暂停在此处，可以使用netstat查看当前的连接
+	free(de_key);
+	de_key = NULL;
+
 	close(cfd); // 关闭连接，本次通信完成
 
 	return 0;

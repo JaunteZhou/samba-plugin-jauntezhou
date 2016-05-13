@@ -15,7 +15,7 @@
 #define KEY_ROOT 	"/home/jauntezhou/Documents/data/"
 #define KEY_ROOT_LEN 	strlen(KEY_ROOT)
 #define KEY_SIZE 	16
-#define KEY_EN_SIZE 	128
+#define EN_KEY_SIZE 	128
 
 #define KEY_REQ_TYPE 	1
 #define FN_MAX 		256
