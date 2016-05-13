@@ -192,6 +192,7 @@ int main()
 		memcpy( file_name, req->buf+req->un_len, req->fn_len );
 		memset( key, 0, KEY_SIZE );
 
+		// read key from file !
 		ret = read_key( host_name, file_name, key );
 		if ( ret == -1 ){
 			printf("Read Key Error !\n");

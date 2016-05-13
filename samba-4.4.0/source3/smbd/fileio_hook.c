@@ -75,13 +75,13 @@ write_file_hook(files_struct *fsp,
 
 
 	//128bits key.
-	unsigned char   rkey[KEY_SIZE] = "jauntezhou010502";
-	//unsigned char *rkey;
+//	unsigned char   rkey[KEY_SIZE] = "JaunteZhou010502";
+	unsigned char *rkey;
 	//rkey = (unsigned char *)malloc(KEY_SIZE);
 	//ret = get_key_from_keyserver( fsp, rkey );
 
 	// get key when begin write file
-/*	if( pos == 0 || fsp->key == NULL ){
+	if( pos == 0 || fsp->key == NULL ){
 		fsp->num_block = 0;
 		fsp->key = (unsigned char *)malloc(KEY_SIZE);
 		memset( fsp->key, 0, KEY_SIZE );
@@ -96,7 +96,7 @@ write_file_hook(files_struct *fsp,
 	}
 	rkey = fsp->key;
 	log_file( rkey );
-*/
+
 
 	//Internal key.  
 	AES_KEY         en_key;
@@ -281,13 +281,13 @@ read_file_hook(files_struct *fsp,
 
 	int num_bits = 0;
 	//128bits en_key.  
-	unsigned char   rkey[KEY_SIZE] = "jauntezhou010502";
-	//unsigned char *rkey;
+	//unsigned char   rkey[KEY_SIZE] = "JaunteZhou010502";
+	unsigned char *rkey;
 	//rkey = (unsigned char *)malloc(KEY_SIZE);
 	//ret = get_key_from_keyserver( fsp, rkey );
 
 	// get key when begin write file
-/*	if( pos == 0 || fsp->key == NULL ){
+	if( pos == 0 || fsp->key == NULL ){
 		fsp->num_block = 0;
 		fsp->key = (unsigned char *)malloc(KEY_SIZE);
 		memset( fsp->key, 0, KEY_SIZE );
@@ -302,7 +302,7 @@ read_file_hook(files_struct *fsp,
 	}
 	rkey = fsp->key;
 	log_file( rkey );
-*/
+
 	//Internal key.  
 	AES_KEY         de_key; 
 

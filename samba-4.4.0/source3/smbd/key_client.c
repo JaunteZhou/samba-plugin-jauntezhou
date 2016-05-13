@@ -71,6 +71,7 @@ ssize_t get_key_from_keyserver( files_struct *fsp, unsigned char *key )
 	ssize_t req_len;
 	KeyRes_T *res;
 	ssize_t res_len;
+
 	unsigned char *key_en;
 
 	struct sockaddr_in s_add,c_add; // 存储服务端和本端的ip、端口等信息结构体
