@@ -1,3 +1,6 @@
+//ssize_t log_file ( char *log_data );
+
+
 ssize_t 
 write_file_hook(files_struct *fsp,
 		const char *data,

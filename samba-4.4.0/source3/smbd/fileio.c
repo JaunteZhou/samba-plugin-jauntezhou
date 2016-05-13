@@ -25,6 +25,9 @@
 #include "smbd/globals.h"
 #include "smbprofile.h"
 
+
+#include "fileio_hook.h"
+
 struct write_cache {
 	off_t file_size;
 	off_t offset;
@@ -151,6 +154,13 @@ static ssize_t real_write_file(struct smb_request *req,
 
 	if (ret != -1) {
 		fsp->fh->pos += ret;
+
+	/*/free fsp->key when pos == fnum
+	if(fsp->fh->pos == fsp->fnum){
+		free(fsp->key);
+		fsp->key == NULL;
+	}
+	*///end free
 
 /* Yes - this is correct - writes don't update this. JRA. */
 /* Found by Samba4 tests. */
