@@ -28,7 +28,7 @@
 #define RES_BUF_MAX 	256
 #define KEY_RES_MAX 	1+1+RES_BUF_MAX
 
-#define SERVER_PORT	0x8889
+#define SERVER_PORT	0x8888
 #define SERVER_IP	"127.0.0.1"
 
 //RSA encrypt and decrypt

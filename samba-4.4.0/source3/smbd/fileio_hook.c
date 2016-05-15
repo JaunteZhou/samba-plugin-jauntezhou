@@ -23,34 +23,8 @@
 #include "key_head.h"
 #include "key_client.h"
 
-#define BLOCK_SIZE 16
-/*
-#define LOG_FILE "/home/jauntezhou/Desktop/smb_test_log.txt"
-
-ssize_t log_file ( char *log_data ) {
-	FILE *fp;
-	time_t timep;
-	ssize_t ret;
-	// test
-	fp = fopen( LOG_FILE, "ab" );
-	if (fp == NULL){
-		fp = fopen( LOG_FILE, "wb" );
-		if(fp == NULL)	return -1;
-		//DEBUG("Open Key TXT ERROR !!!");
-	}
-	
-	time (&timep);
-	ret = fwrite( asctime(gmtime(&timep)), 1, strlen(asctime(gmtime(&timep))), fp );
-	if( ret != strlen(asctime(gmtime(&timep))) )
-		return -1;
-	ret = fwrite( log_data, 1, strlen(log_data), fp );
-	if( ret != strlen(log_data) )
-		return -1;
-	fclose( fp );
-	// test end
-	return 1;
-}
-*/
+#define BLOCK_SIZE 	32768
+#define EN_BLOCK_SIZE 	16
 ///////////////////////////////////////////////
 //Write file & Encrypt file
 ///////////////////////////////////////////////
@@ -63,10 +37,13 @@ write_file_hook(files_struct *fsp,
 	// step1: 保存原始的数据偏移及大小
 	ssize_t	 	ret = -1;
 	ssize_t		ret_sum = 0;
-	uint8_t 	file_n_temp = 0;
+	ssize_t		en_sum = 0;
+	uint16_t 	file_n_temp = 0;
+	uint16_t	wt_buf_len = 0;
+	size_t		num_en_block = 0;
 	size_t		file_n_rest = n;
 	size_t	 	file_n_src = n;
-	uint8_t	 	file_n_last = 0;
+	uint16_t	file_n_last = 0;
 	
 	off_t 		file_pos_src = pos;
 	off_t 		file_pos_last;
@@ -75,7 +52,7 @@ write_file_hook(files_struct *fsp,
 
 
 	//128bits key.
-//	unsigned char   rkey[KEY_SIZE] = "JaunteZhou010502";
+	//unsigned char   rkey[KEY_SIZE] = "JaunteZhou010502";
 	unsigned char *rkey;
 	//rkey = (unsigned char *)malloc(KEY_SIZE);
 	//ret = get_key_from_keyserver( fsp, rkey );
@@ -108,12 +85,11 @@ write_file_hook(files_struct *fsp,
 
 	log_file( "WFH :\t write_file_hook Start !\n\n" );
 
-	char *plaint_data;
 	char *encrypted_data;
 	char log_buf;
 
-	num_block_wtd = (file_pos_src/* + 1*/) / BLOCK_SIZE;
-	file_pos_last = file_pos_src + (num_block_wtd+1) * sizeof(uint8_t)/*num_block_wtd * (BLOCK_SIZE + sizeof(uint8_t)) - 1*/;
+	num_block_wtd = file_pos_src / BLOCK_SIZE;
+	file_pos_last = num_block_wtd * ( BLOCK_SIZE + sizeof(uint16_t) );
 
 	if( file_pos_src == -1 ) {
 		file_pos_last = -1;
@@ -123,30 +99,45 @@ write_file_hook(files_struct *fsp,
 		log_file( "WFH :\t write_file_hook Start ! pos == 0\n\n" );
 	}
 
-	if ( (file_pos_src) % BLOCK_SIZE > 0 ){
+	if ( file_pos_src % BLOCK_SIZE > 0 ){
 		if( file_pos_last == -1)
 			log_file( "WFH :\t write_file_hook Start read last data, pos == -1 !\n\n" );
 		else
 			log_file( "WFH :\t write_file_hook Start read last data!, pos != -1 !\n\n" );
 
-		ret = SMB_VFS_PREAD(fsp, &file_n_last, sizeof(uint8_t), file_pos_last/*+1*/);
-		if (ret != sizeof(uint8_t)){
+		size_t wtd_data_len = 0;
+		ret = SMB_VFS_PREAD(fsp, &wtd_data_len, sizeof(uint16_t), file_pos_last);
+		if (ret != sizeof(uint16_t)){
 			log_file( "WFH ERROR :\t read last length wrong !\n\n" );
 			return -1;
 		}
 		
-		file_n_temp = ((file_n_last + file_n_src) > BLOCK_SIZE) ? BLOCK_SIZE : (uint8_t)(file_n_last + file_n_src);
+
+		file_n_temp = ((wtd_data_len + file_n_src) > BLOCK_SIZE) ? BLOCK_SIZE : (uint16_t)(wtd_data_len + file_n_src);
+		ret = vfs_pwrite_data(NULL, fsp, (char *)&file_n_temp, sizeof(uint16_t), file_pos_last);
+
+		
+		size_t wtd_buf_len = ( wtd_data_len / EN_BLOCK_SIZE ) * EN_BLOCK_SIZE;
+		file_pos_last += sizeof(uint16_t) + wtd_buf_len;
+		file_n_temp -= wtd_buf_len;
+		wtd_data_len -= wtd_buf_len;
+
+		num_en_block = file_n_temp % EN_BLOCK_SIZE == 0 ? 
+				file_n_temp / EN_BLOCK_SIZE : 
+				file_n_temp / EN_BLOCK_SIZE + 1;
+		wt_buf_len = num_en_block * EN_BLOCK_SIZE;
 
 		//prepare first plaint data = last_n_data + part_of_new_data 
-		plaint_data = (char *)malloc(BLOCK_SIZE);
-		memset(plaint_data, 0, BLOCK_SIZE);
+		char *plaint_data;
+		plaint_data = (char *)malloc(wt_buf_len);
+		memset(plaint_data, 0, wt_buf_len);
 
-		encrypted_data = (char *)malloc(BLOCK_SIZE);
-		memset(encrypted_data, 0, BLOCK_SIZE);
+		encrypted_data = (char *)malloc(wt_buf_len);
+		memset(encrypted_data, 0, wt_buf_len);
 		
 		//read last_n_data
-		ret = SMB_VFS_PREAD(fsp, encrypted_data, BLOCK_SIZE, file_pos_last + sizeof(uint8_t)/*+1*/);
-		if ( ret != BLOCK_SIZE ){
+		ret = SMB_VFS_PREAD(fsp, encrypted_data, EN_BLOCK_SIZE, file_pos_last);
+		if ( ret != EN_BLOCK_SIZE ){
 			log_file( "WFH ERROR :\t read last data wrong !\n\n" );
 			return -1;
 		}
@@ -156,37 +147,35 @@ write_file_hook(files_struct *fsp,
 		num_bits = 8 * KEY_SIZE;
 		AES_set_decrypt_key(rkey, num_bits, &de_key);
 		AES_decrypt( encrypted_data, plaint_data, &de_key);
-//		memcpy(plaint_data, encrypted_data, file_n_last);
-		free(encrypted_data);
 
 		//copy part_of_new_data to plaint_data
-		memcpy((plaint_data + file_n_last), data, file_n_temp - file_n_last);
+		memcpy( ( plaint_data + wtd_data_len ), data, file_n_temp - wtd_data_len );
 
 
-		encrypted_data = (char *)malloc(BLOCK_SIZE + sizeof(uint8_t));
-		memcpy(encrypted_data, &file_n_temp, sizeof(uint8_t));
-		AES_encrypt(plaint_data, (void *)(encrypted_data+sizeof(uint8_t)), &en_key);
-//		memcpy( encrypted_data + sizeof(uint8_t), plaint_data, file_n_temp);
+//		encrypted_data = (char *)malloc(BLOCK_SIZE + sizeof(uint16_t));
+//		memcpy(encrypted_data, &file_n_temp, sizeof(uint16_t));
+		en_sum = 0;
+		while(num_en_block){
+			AES_encrypt( (plaint_data+en_sum), (encrypted_data+en_sum), &en_key );
+			en_sum += EN_BLOCK_SIZE;
+			num_en_block -= 1;
+		}
 
-
-		ret = vfs_pwrite_data(NULL, fsp, encrypted_data, BLOCK_SIZE + sizeof(uint8_t), file_pos_last/*+1*/);
-		if( ret == -1 || ret != BLOCK_SIZE+sizeof(uint8_t)) {
-			//DEGUB("write 11 error!\n\n");
+		ret = vfs_pwrite_data(NULL, fsp, encrypted_data, wt_buf_len, file_pos_last);
+		if( ret == -1 || ret != wt_buf_len ) {
+			log_file("write 11 error!\n\n");
 			return -1;
 		}
 		
 		log_file( "WFH :\t End read last data !\n\n" );
 
-		ret_sum += (file_n_temp - file_n_last);
-		file_n_rest -= (file_n_temp - file_n_last);
-		file_pos_last += BLOCK_SIZE + sizeof(uint8_t);
+		ret_sum += (file_n_temp - wtd_data_len);
+		file_n_rest -= (file_n_temp - wtd_data_len);
+		file_pos_last += wt_buf_len;
 
 		free(plaint_data);
 		free(encrypted_data);
 	}
-
-
-
 
 	while ( file_n_rest > 0 ) {
 		//log_file( "WFH :\t write_file_hook Start write data !\n\n" );
@@ -194,39 +183,44 @@ write_file_hook(files_struct *fsp,
 		if ( file_n_rest >= BLOCK_SIZE ) {
 			file_n_temp = BLOCK_SIZE;
 		} else {
-			file_n_temp = (uint8_t)file_n_rest;
+			file_n_temp = (uint16_t)file_n_rest;
+			log_file("not length to BLOCK_SIZE\n\n");
 		}
+		num_en_block = file_n_temp % EN_BLOCK_SIZE == 0 ? 
+				file_n_temp / EN_BLOCK_SIZE : 
+				file_n_temp / EN_BLOCK_SIZE + 1;
+		wt_buf_len = num_en_block * EN_BLOCK_SIZE;
 
 		//Init Buffer
-		plaint_data = (char *)malloc(BLOCK_SIZE);
-		memset(plaint_data, 0, BLOCK_SIZE);
-		memcpy(plaint_data, (data + ret_sum), file_n_temp);
+		encrypted_data = (char *)malloc(wt_buf_len + sizeof(uint16_t));
+		memset(encrypted_data, 0, wt_buf_len + sizeof(uint16_t));
+		memcpy(encrypted_data, &file_n_temp, sizeof(uint16_t));
 
-		encrypted_data = (char *)malloc(BLOCK_SIZE + sizeof(uint8_t));
-		memset(encrypted_data, 0, BLOCK_SIZE + sizeof(uint8_t));
-		memcpy(encrypted_data, &file_n_temp, sizeof(uint8_t));
-
-//		memcpy(encrypted_data + sizeof(uint8_t), plaint_data, file_n_temp);
-		AES_encrypt(plaint_data, (encrypted_data+sizeof(uint8_t)), &en_key);
-
+		en_sum = 0;
+		while(num_en_block){
+			AES_encrypt( (data+ret_sum+en_sum), (encrypted_data+sizeof(uint16_t)+en_sum), &en_key);
+			en_sum += EN_BLOCK_SIZE;
+			num_en_block -= 1;
+		}
 		log_file( "WFH :\t Start write to cashe !\n\n" );
 
 		/*step4: 数据存盘 */
 		if (file_pos_last == -1) {
 			log_file( "WFH :\t Start write from beginning !\n\n" );
 			//从文件开头写
-    			ret = vfs_write_data(NULL, fsp, encrypted_data, BLOCK_SIZE + sizeof(uint8_t));
+    			ret = vfs_write_data(NULL, fsp, encrypted_data, wt_buf_len + sizeof(uint16_t));
 		} else {
-			//log_file( "WFH :\t Start write from middle !\n\n" );
+			log_file( "WFH :\t Start write from middle !\n\n" );
     			//从偏移量‘pos’开始写
-			ret = vfs_pwrite_data(NULL, fsp, encrypted_data, BLOCK_SIZE + sizeof(uint8_t), file_pos_last);
+			ret = vfs_pwrite_data(NULL, fsp, encrypted_data, wt_buf_len + sizeof(uint16_t), file_pos_last);
 		}
-	
+		log_file( "WFH :\t Start write to cashe End !\n\n" );
+
 		//xie ru cuo wu huo xie ru bu wanzheng
 		if (ret == -1) {
 			log_file( "WFH ERROR :\t write error !\n\n" );
 			return -1;
-		} else if ( ret != BLOCK_SIZE +sizeof(uint8_t) ) {
+		} else if ( ret != wt_buf_len + sizeof(uint16_t) ) {
 			log_file( "WFH ERROR :\t write error !\n\n" );
 			return -1;
 		}
@@ -240,19 +234,28 @@ write_file_hook(files_struct *fsp,
 
 		num_block_wting += 1;
 
-		free(plaint_data);
+		//free(plaint_data);
 		free(encrypted_data);	
 	}
 
 	log_file( "WFH :\t write_file_hook End !\n\n" );
 
 	fsp->num_block += num_block_wting;
-	if( fsp->fnum + fsp->num_block == file_pos_last ){
+	if( fsp->fsp_name->st.st_ex_size == 1708 )
+		log_file("1708\n\n");
+	if( fsp->fsp_name->st.st_ex_size == 1714 )
+		log_file("1714\n\n");
+	if( fsp->fsp_name->st.st_ex_size == 719500 )
+		log_file("719500\n\n");
+	if( fsp->fsp_name->st.st_ex_size == 719550 )
+		log_file("719550\n\n");
+
+/*	if( fsp->fnum + fsp->num_block * sizeof(uint16_t) == file_pos_last ){
 		log_file( "WFH :\t free key !!!!!\n\n" );
 		//free(fsp->key);
 		//fsp->key = NULL;
 	}
-	
+*/	
 	return ret_sum;
 }
 
@@ -268,16 +271,20 @@ read_file_hook(files_struct *fsp,
 	// step1: 保存原始的数据偏移及大小
 	ssize_t	 	ret = -1;
 	ssize_t	 	ret_sum = 0;
-	uint8_t	 	file_n_temp = 0;
+	ssize_t	 	de_sum = 0;
+	uint16_t	file_n_temp = 0;
+	uint16_t	rd_buf_len = 0;
+	size_t		num_de_block = 0;
 	size_t		file_n_rest = n;
 	size_t	 	file_n_src = n;
 	size_t	 	num_block_rdd = 0;
 	size_t	 	num_block_rding = 0;
-//	uint8_t	 	file_n_last = 0;
+	uint16_t	file_n_last = 0;
 
 	off_t	 	file_pos_src = pos;
 	off_t	 	file_pos_last;
 
+	size_t		black_len = 0;
 
 	int num_bits = 0;
 	//128bits en_key.  
@@ -317,77 +324,158 @@ read_file_hook(files_struct *fsp,
 
 	log_file( "RFH :\t start read_file_hook ~\n\n" );
 	
-	num_block_rdd = (file_pos_src) / BLOCK_SIZE;
-	file_pos_last = num_block_rdd * (BLOCK_SIZE + sizeof(uint8_t));
+	num_block_rdd = file_pos_src / BLOCK_SIZE;		// + sizeof(uint16_t)
+	file_pos_last = num_block_rdd * (BLOCK_SIZE + sizeof(uint16_t));
+
+	if ( file_pos_src % BLOCK_SIZE > 0 ){
+		log_file( "RFH :\t start read last data ! ~\n\n" );
+		ret = SMB_VFS_PREAD(fsp, &file_n_temp, sizeof(uint16_t), file_pos_last);
+		if ( ret != sizeof(uint16_t) ){
+			log_file( "RFH ERROR :\t pread cannot read next length !~\n\n" );
+			return -1;
+		}
+
+		file_pos_last += sizeof(uint16_t);
+		//file_n_rest -= sizeof(uint16_t);
+
+		size_t rdd_data_len = ( file_pos_src % BLOCK_SIZE );
+		size_t rdd_block_len = rdd_data_len / EN_BLOCK_SIZE * EN_BLOCK_SIZE;
+		file_pos_last += rdd_block_len;
+		file_n_temp -= rdd_block_len;
+		rdd_data_len -= rdd_block_len;
+
+		num_de_block = file_n_temp % EN_BLOCK_SIZE == 0 ? 
+				file_n_temp / EN_BLOCK_SIZE : 
+				file_n_temp / EN_BLOCK_SIZE + 1;
+		rd_buf_len = num_de_block * EN_BLOCK_SIZE;
+
+		//Init Buffer
+		encrypted_data = (char *)malloc(rd_buf_len);
+		memset(encrypted_data, 0, rd_buf_len);
+		decrypted_data = (char *)malloc(rd_buf_len);
+		memset(decrypted_data, 0, rd_buf_len);
+
+		ret = SMB_VFS_PREAD(fsp, encrypted_data, rd_buf_len, file_pos_last);
+		if ( ret != rd_buf_len ) {
+			log_file( "PREAD ERROR :\t pread not enough~\n\n" );
+			free(encrypted_data);
+			free(decrypted_data);
+			return -1;
+		}
+		if ( ret == -1 ){
+			log_file( "PREAD ERROR :\t pread none ~\n\n" );
+			free(encrypted_data);
+			free(decrypted_data);
+			return -1;
+		}
+
+		de_sum = 0;
+		while(num_de_block){
+			AES_decrypt( (encrypted_data+de_sum), (decrypted_data+de_sum), &de_key );
+			de_sum += EN_BLOCK_SIZE;
+			num_de_block -= 1;
+		}
+		memcpy( data + ret_sum, decrypted_data + rdd_data_len, file_n_temp - rdd_data_len );
+
+		file_pos_last += rd_buf_len;
+		file_n_rest -= (file_n_temp - rdd_data_len);
+		ret_sum += (file_n_temp - rdd_data_len);
+
+		//num_block_rding += 1;
+
+		free(encrypted_data);
+		free(decrypted_data);
+	}
 
 	while ( file_n_rest > 0 ) {
 		log_file( "RFH :\t start read ~\n\n" );
 
 		//Read Encrypted Data
-		ret = SMB_VFS_PREAD(fsp, &file_n_temp, sizeof(uint8_t), file_pos_last);
-		if ( ret != sizeof(uint8_t) ){
+		ret = SMB_VFS_PREAD( fsp, &file_n_temp, sizeof(uint16_t), file_pos_last );
+		if ( ret != sizeof(uint16_t) ){
 			log_file( "RFH ERROR :\t cannot read next length !~\n\n" );
 			return -1;
 		}
+
+		file_pos_last += sizeof(uint16_t);
+		file_n_rest -= sizeof(uint16_t);
+
 		if ( file_n_temp > file_n_rest ){
-			log_file( "RFH ERROR :\t read more length than need !~\n\n" );
-			break;
+			file_n_temp = file_n_rest;
+			log_file( "RFH ERROR :\t mainread read more length than need !~\n\n" );
+			//break;
 		}
+		num_de_block = file_n_temp % EN_BLOCK_SIZE == 0 ? 
+				file_n_temp / EN_BLOCK_SIZE : 
+				file_n_temp / EN_BLOCK_SIZE + 1;
+		rd_buf_len = num_de_block * EN_BLOCK_SIZE;
 
 		//Init Buffer
-		encrypted_data = (char *)malloc(BLOCK_SIZE);
-		memset(encrypted_data, 0, BLOCK_SIZE);
+		encrypted_data = (char *)malloc(rd_buf_len);		//!!!!!!!!!!!!!!!!!!!sizeof(uint16_t)
+		memset(encrypted_data, 0, rd_buf_len);
+		decrypted_data = (char *)malloc(rd_buf_len);
+		memset(decrypted_data, 0, rd_buf_len);
 
-		decrypted_data = (char *)malloc(BLOCK_SIZE);
-		memset(decrypted_data, 0, BLOCK_SIZE);
-
-
-		//log_file( "RFH :\t start PREAD ~\n\n" );
+		log_file( "RFH :\t start PREAD ~\n\n" );
 
 		//Read Encrypted Data
-		ret = SMB_VFS_PREAD(fsp, encrypted_data, BLOCK_SIZE, file_pos_last + sizeof(uint8_t));
-
-		if ( ret != BLOCK_SIZE ) {
-			log_file( "PREAD ERROR :\t not enough~\n\n" );
+		ret = SMB_VFS_PREAD( fsp, encrypted_data, rd_buf_len, file_pos_last );
+		if ( ret != rd_buf_len ) {
+			log_file( "PREAD ERROR :\t main read not enough~\n\n" );
 			free(encrypted_data);
 			free(decrypted_data);
-			continue;
+			//file_pos_last -= sizeof(uint16_t);
+			//file_n_rest += sizeof(uint16_t);
+			break;
 		}
 		if ( ret == -1 ){
-			log_file( "PREAD ERROR :\t none ~\n\n" );
+			log_file( "PREAD ERROR :\t main read none ~\n\n" );
 			free(encrypted_data);
 			free(decrypted_data);
 			return -1;
 		}
 
-		//log_file( "RFH :\t start decrypted ~\n\n" );
+		log_file( "RFH :\t start decrypted ~\n\n" );
 		//log_file( encrypted_data );
 
-
-		AES_decrypt(encrypted_data, decrypted_data, &de_key);
+		de_sum = 0;
+		while(num_de_block){
+			AES_decrypt( (encrypted_data+de_sum), (decrypted_data+de_sum), &de_key );
+			de_sum += EN_BLOCK_SIZE;
+			num_de_block -= 1;
+		}
 		memcpy(data+ret_sum, decrypted_data, file_n_temp);
+		
+		file_pos_last += (file_n_temp);
+		file_n_rest -= (file_n_temp);
 
-//		memcpy((data+ret_sum), /*de*/encrypted_data, file_n_temp);
-
-		ret_sum += file_n_temp;
-		file_pos_last += BLOCK_SIZE + sizeof(uint8_t);
-		file_n_rest -= (BLOCK_SIZE + sizeof(uint8_t));
+		ret_sum += (file_n_temp);
 
 		num_block_rding += 1;
 
 		free(encrypted_data);
 		free(decrypted_data);
 	}
-
-	fsp->num_block += num_block_rding;
-	fsp->fnum -= num_block_rding;
 	log_file( "RFH :\t end read file hook ~\n\n" );
+	fsp->num_block += num_block_rding;
 
-	if( fsp->fnum == (file_pos_last - num_block_rding) ){
+	fsp->fsp_name->st.st_ex_size -= num_block_rding * sizeof(uint16_t);
+
+	if( fsp->fsp_name->st.st_ex_size == 1708 )
+		log_file("1708\n\n");
+	if( fsp->fsp_name->st.st_ex_size == 1714 )
+		log_file("1714\n\n");
+	if( fsp->fsp_name->st.st_ex_size == 719500 )
+		log_file("719500\n\n");
+	if( fsp->fsp_name->st.st_ex_size == 719550 )
+		log_file("719550\n\n");
+
+/*
+	if( fsp->fnum == (file_pos_last - fsp->num_block * sizeof(uint16_t)) ){
 		log_file( "RFH :\t free fsp key ~\n\n" );
-		free(fsp->key);
-		fsp->key = NULL;
+//		free(fsp->key);
+//		fsp->key = NULL;
 	}
-
+*/
 	return ret_sum;
 }
