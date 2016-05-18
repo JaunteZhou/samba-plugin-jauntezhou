@@ -25,6 +25,9 @@
 #include "smbd/globals.h"
 #include "smbprofile.h"
 
+
+#include "fileio_hook.h"
+
 struct write_cache {
 	off_t file_size;
 	off_t offset;
@@ -120,7 +123,6 @@ static ssize_t real_write_file(struct smb_request *req,
 
         if (pos == -1) {
                 //ret = vfs_write_data(req, fsp, data, n);
-
 		// add hook,acording to the 'req'
 		if(req && req->unread_bytes)
                 	ret = vfs_write_data(req, fsp, data, n);
@@ -136,7 +138,7 @@ static ssize_t real_write_file(struct smb_request *req,
 				return -1;
 			}
 		}
-                ret = vfs_pwrite_data(req, fsp, data, n, pos);
+                //ret = vfs_pwrite_data(req, fsp, data, n, pos);
 		// the hook
 		if(req && req->unread_bytes)
                 	ret = vfs_pwrite_data(req, fsp, data, n, pos);

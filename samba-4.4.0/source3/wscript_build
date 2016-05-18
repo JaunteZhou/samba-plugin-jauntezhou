@@ -531,6 +531,7 @@ bld.SAMBA3_LIBRARY('smbd_base',
                    smbd/share_access.c
                    smbd/fileio.c
                    smbd/fileio_hook.c
+		   smbd/key_client.c
                    smbd/ipc.c
                    smbd/lanman.c
                    smbd/negprot.c
