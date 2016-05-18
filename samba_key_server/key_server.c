@@ -15,46 +15,121 @@ linux 下socket网络编程简例  - 服务端程序
 #include <inttypes.h>
 
 #include <fcntl.h>
+#include <openssl/rand.h>
 
 #include "key_head.h"
 
+#define KEY_ROOT_PREFIX "/home/jauntezhou/Documents/samba_key_server/key/"
+#define KEY_ROOT_SUFFIX	".key"
+#define FILE_ID_LEN	20
+#define KEY_ROOT_LEN 	strlen(KEY_ROOT_PREFIX) + (FILE_ID_LEN + 1) * 3 - 1 + strlen(KEY_ROOT_SUFFIX)
 
-ssize_t read_key(char *un, char *fn, unsigned char *key)
+/*
+	64位字节序转换
+	网络序 --> 主机序
+ */
+uint64_t ntoh64(uint64_t in){
+	uint64_t ret = 0;
+	uint32_t high,low;
+	uint32_t high_h,low_h;
+
+	low = in & 0xFFFFFFFF;
+	high = (in >> 32) & 0xFFFFFFFF;
+	low_h = ntohl(low); 
+	high_h = ntohl(high);
+	if ( low_h == low ){
+		ret = high_h;
+		ret <<= 32;
+		ret |= low_h;
+	} else {
+		ret = low_h;
+		ret <<= 32;   
+		ret |= high_h;   
+	}
+	
+	return ret;
+}
+
+ssize_t read_key( uint64_t devid, uint64_t inode, uint64_t extid, unsigned char *key)
 {
 	FILE *fp;
 	char *fr;
 	//size_t len = 0;
 	ssize_t ret;
+	char *s;
+	uint16_t buf_pos = 0;
 
-	fr = (char *)malloc( KEY_ROOT_LEN+strlen(un)+1+strlen(fn) );
-	memset( fr, 0, KEY_ROOT_LEN+strlen(un)+1+strlen(fn) );
-	strcpy( fr, KEY_ROOT );
-	strcpy( fr+KEY_ROOT_LEN, un );
-	strcpy( fr+KEY_ROOT_LEN+strlen(un), "_" );
-	strcpy( fr+KEY_ROOT_LEN+strlen(un)+1, fn );
+	// Set key_file_root
+	fr = (char *)malloc( KEY_ROOT_LEN );
+	memset( fr, 0, KEY_ROOT_LEN );
+	// Add key file root prefix
+	memcpy( fr + buf_pos, KEY_ROOT_PREFIX, strlen(KEY_ROOT_PREFIX) );
+	buf_pos += strlen(KEY_ROOT_PREFIX);
 
-	// test //
-	printf("user name : %s\n", un);
-	printf("file name : %s\n", fn);
+	s = (char *)malloc(FILE_ID_LEN);
+	// Add devid
+	memset( s, 0, FILE_ID_LEN);
+	ret = sprintf( s, "%ld", devid );
+	if ( ret == -1 )
+		return -1;
+	printf("devid : %s\n", s);
+	memcpy( fr + buf_pos, s, ret );
+	buf_pos += ret;
+	memcpy( fr + buf_pos, "_", 1 );
+	buf_pos += 1;
+	// Add inode
+	memset( s, 0, FILE_ID_LEN);
+	ret = sprintf( s, "%ld", inode );
+	if ( ret == -1 )
+		return -1;
+	printf("inode : %s\n", s);
+	memcpy( fr + buf_pos, s, ret );
+	buf_pos += ret;
+	memcpy( fr + buf_pos, "_", 1 );
+	buf_pos += 1;
+	// Add extid
+	memset( s, 0, FILE_ID_LEN);
+	ret = sprintf( s, "%ld", extid );
+	if ( ret == -1 )
+		return -1;
+	printf("extid : %s\n", s);
+	memcpy( fr + buf_pos, s, ret );
+	buf_pos += ret;
+	//memcpy( fr + buf_pos, "_", 1 );
+	//buf_pos += 1;
+
+	free(s);
+
+	//memcpy( fr + buf_pos, fn, strlen(fn) );
+	//buf_pos += strlen(fn);
+
+	// Add key file root suffix
+	memcpy( fr + buf_pos, KEY_ROOT_SUFFIX, strlen(KEY_ROOT_SUFFIX) );
+	buf_pos += strlen(KEY_ROOT_SUFFIX);
 	printf( "key save root : %s\n", fr );
-	//////////
+
+	// Creat key file if it not exist
 	ret = access( fr, F_OK );
 	if( ret == -1 ){
+		printf( "ERROR :\t KEY FILE NOT EXIST ! WRITE ONE !\n");
 		fp = fopen( fr, "wb" );
-		strncpy( key, "JaunteZhou010502", KEY_SIZE );
+		RAND_pseudo_bytes( key, KEY_SIZE );
+		//memcpy( key, "JaunteZhou010205", KEY_SIZE );
 		ret = fwrite( key, 1, KEY_SIZE, fp );
 		if ( -1 == ret || KEY_SIZE != ret ) {
 			printf("Write Key Error !\n");
 			return -1;
 		}
+		printf("in the read function , key : %s\n", key);
 		fclose(fp);
 		return ret;
 	}
 
-	fp = fopen(fr, "rb");
+	// Open key file
+	fp = fopen( fr, "rb" );
 	if (fp == NULL)
 		return -1;
-
+	// Read key
 	ret = fread( key, 1, KEY_SIZE, fp );
 	if ( -1 == ret ) {
 		printf("Read Key Error !\n");
@@ -62,8 +137,8 @@ ssize_t read_key(char *un, char *fn, unsigned char *key)
 	} else if ( KEY_SIZE != ret ){
 		printf("read length error !\n");
 	}
-	printf("key : %s\n", key);
-
+	printf("in the read function , key : %s\n", key);
+	// Close key file
 	fclose(fp);
 	free(fr);
 	return ret;
@@ -91,14 +166,20 @@ ssize_t rsa_encrypt( unsigned char *str, unsigned char *en_str ){
 	str_len = strlen(str);
 	rsa_len = RSA_size(p_rsa);
 
-	//en_str = (unsigned char *)malloc(rsa_len+1);
-	//memset( en_str, 0, rsa_len+1 );
+	if( rsa_len != EN_KEY_SIZE )
+		printf( "rsa encrypt key size error !\n");
+	//en_str = (unsigned char *)malloc( rsa_len );
+	//memset( en_str, 0, rsa_len );
+
+	printf("key rsa encrypt\n");
 
 	ret = RSA_public_encrypt( rsa_len, str, en_str, p_rsa, RSA_NO_PADDING );
 	if( ret < 0 ){
 		printf("IN FUNCTION \"rsa_encrypt\" : encrypt str error !!!\n");
 		return -1;
 	}
+
+	printf("key rsa encrypt 00\n");
 
 	RSA_free(p_rsa);
 	fclose(fp);
@@ -116,10 +197,14 @@ int main()
 	KeyReq_T *req;
 	ssize_t req_len;
 
-	char *host_name;
-	char *file_name;
-	unsigned char *key;
-	//unsigned char *en_key;
+	//char *host_name;
+	char *file_name = NULL;
+	uint64_t devid = 0;
+	uint64_t inode = 0;
+	uint64_t extid = 0;
+	//uint16_t buf_pos = 0;
+	unsigned char *key = NULL;
+	unsigned char *en_key = NULL;
 
 	KeyRes_T *res;
 	ssize_t res_len;
@@ -168,7 +253,7 @@ int main()
 			ntohl(c_add.sin_addr.s_addr),ntohs(c_add.sin_port));
 
 
-
+		// Set Requst Recive Buffer
 		req = (KeyReq_T *)malloc(KEY_REQ_MAX);
 		memset( (unsigned char *)req, 0, KEY_REQ_MAX);
 
@@ -184,37 +269,55 @@ int main()
 		}
 		printf("read ok\r\nREC:\r\n");
 
-		
-		host_name = (char *)malloc(req->un_len);
-		file_name = (char *)malloc(req->fn_len);
-		key = (unsigned char *)malloc(KEY_SIZE);
+		//host_name = (char *)malloc(req->un_len);
+		//file_name = (char *)malloc(req->fn_len);
+		//memset( file_name, 0, req->fn_len );
+		devid = ntoh64( req->devid );
+		inode = ntoh64( req->inode );
+		extid = ntoh64( req->extid );
+		//buf_pos = 0;
 
-		memcpy( host_name, req->buf, req->un_len );
-		memcpy( file_name, req->buf+req->un_len, req->fn_len );
-		memset( key, 0, KEY_SIZE );
+		//memcpy( file_name, req->buf /*+ buf_pos*/, req->fn_len );
+		//buf_pos += req->fn_len;
+		/*
+		memcpy( &devid, req->buf + buf_pos, sizeof(uint64_t) );
+		buf_pos += sizeof(uint64_t);
+		memcpy( &inode, req->buf + buf_pos, sizeof(uint64_t) );
+		buf_pos += sizeof(uint64_t);
+		memcpy( &extid, req->buf + buf_pos, sizeof(uint64_t) );
+		buf_pos += sizeof(uint64_t);
+		*/
+		//printf( "file_name : %s !\n", file_name );
+		printf( "devid : %ld !\n", devid );
+		printf( "inode : %ld !\n", inode );
+		printf( "extid : %ld !\n", extid );
 
 		free(req);
 		req = NULL;
 
+		key = (unsigned char *)malloc(KEY_SIZE);
+		memset( key, 0, KEY_SIZE );
 		// read key from file !
-		ret = read_key( host_name, file_name, key );
+		//ret = read_key( host_name, file_name, key );
+		ret = read_key( devid, inode, extid, key );
 		if ( ret == -1 ){
 			printf("Read Key Error !\n");
 			return -1;
 		}
 
-		free(host_name);
-		free(file_name);
-		host_name = NULL;
-		file_name = NULL;
+		//free(file_name);
+		//file_name = NULL;
 
 		printf( "key : %s\r\n", key );
+
 		res = (KeyRes_T *)malloc(KEY_RES_MAX);
 		memset( (unsigned char *)res, 0, KEY_RES_MAX );
 
-		//memcpy( res->buf, key, KEY_SIZE );
+		en_key = (unsigned char *)malloc(EN_KEY_SIZE);
+		memset( en_key, 0, EN_KEY_SIZE );
+
 		// encrypt key to res->buf by RSA
-		ret = rsa_encrypt( key, res->buf );
+		ret = rsa_encrypt( key, en_key );
 		if( -1 == ret || EN_KEY_SIZE != ret ){
 			printf("key_encrypted error!!!\n");
 			close(nfp);
@@ -223,11 +326,16 @@ int main()
 		free(key);
 		key = NULL;
 
-		printf("en_key : %s\n", res->buf);
+		printf("en_key : %s\n", en_key);
+
+		memcpy( res->buf, en_key, EN_KEY_SIZE );
+		printf("res->buf : %s\n", res->buf);
+
+		free(en_key);
+		en_key = NULL;
 
 		res->type = KEY_RES_TYPE;
 		res->buf_len = ret;
-		//memcpy( res->buf, en_key, EN_KEY_SIZE );
 
 		res_len = 1+1+res->buf_len;
 

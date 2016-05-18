@@ -154,13 +154,6 @@ static ssize_t real_write_file(struct smb_request *req,
 	if (ret != -1) {
 		fsp->fh->pos += ret;
 
-	/*/free fsp->key when pos == fnum
-	if(fsp->fh->pos == fsp->fnum){
-		free(fsp->key);
-		fsp->key == NULL;
-	}
-	*///end free
-
 /* Yes - this is correct - writes don't update this. JRA. */
 /* Found by Samba4 tests. */
 #if 0

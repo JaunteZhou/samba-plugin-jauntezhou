@@ -4,29 +4,66 @@
 #include "key_head.h"
 //#include "key_client.h"
 
+/*
+	64位字节序转换
+	主机序 --> 网络序
+ */
+uint64_t hton64(uint64_t in){
+	uint64_t ret = 0;
+	uint32_t high,low;
+	uint32_t high_n,low_n;
+
+	low = in & 0xFFFFFFFF;
+	high = (in >> 32) & 0xFFFFFFFF;
+	low_n = htonl(low);
+	high_n = htonl(high);
+	if ( low_n == low ){
+		ret = high_n;
+		ret <<= 32;
+		ret |= low_n;
+	} else {
+		ret = low_n;
+		ret <<= 32;   
+		ret |= high_n;   
+	}
+	return ret;
+}
+
 #define LOG_FILE "/home/jauntezhou/Desktop/smb_test_log.txt"
 ssize_t log_file ( char *log_data ) {
 	FILE *fp;
 	time_t timep;
 	ssize_t ret;
-	// test
+
+	//Open log
 	fp = fopen( LOG_FILE, "ab" );
 	if (fp == NULL){
 		fp = fopen( LOG_FILE, "wb" );
-		if(fp == NULL)	return -1;
-		//DEBUG("Open Key TXT ERROR !!!");
+		if(fp == NULL)
+			return -1;
+
 	}
 	
+	//Write time to log
 	time (&timep);
 	ret = fwrite( asctime(gmtime(&timep)), 1, strlen(asctime(gmtime(&timep))), fp );
 	if( ret != strlen(asctime(gmtime(&timep))) )
 		return -1;
+
+	//Write log_data to log
 	ret = fwrite( log_data, 1, strlen(log_data), fp );
 	if( ret != strlen(log_data) )
 		return -1;
+
+	//Keep format
+	ret = fwrite( "\n", 1, 1, fp );
+	if( ret != 1 )
+		return -1;
+
+	//Close log
 	fclose( fp );
-	// test end
-	return 1;
+
+	return strlen(log_data);
 }
 
 ssize_t rsa_decrypt( unsigned char *en_str, unsigned char *de_str ){
@@ -37,24 +74,23 @@ ssize_t rsa_decrypt( unsigned char *en_str, unsigned char *de_str ){
 
 	fp = fopen( RSA_PRIVATE_KEY, "r" );
 	if( fp == NULL ){
-		perror("open key file error");
+		log_file("open key file error");
 		return -1;
 	}
 
 	p_rsa = PEM_read_RSAPrivateKey( fp, NULL, NULL, NULL );
 	if( p_rsa == NULL ){
-		ERR_print_errors_fp(stdout);
+		log_file("read RSA key file error");
 		return -1;
 	}
 	rsa_len = RSA_size( p_rsa );
 
-	de_str = (unsigned char *)malloc(rsa_len+1);
-	memset( de_str, 0, rsa_len+1 );
+	//de_str = (unsigned char *)malloc( rsa_len );
+	//memset( de_str, 0, rsa_len );
 
 	ret = RSA_private_decrypt( rsa_len, en_str, de_str, p_rsa, RSA_NO_PADDING );
-	if( ret < 0 ){
+	if( ret < 0 )
 		return -1;
-	}
 
 	RSA_free(p_rsa);
 	fclose(fp);
@@ -72,7 +108,7 @@ ssize_t get_key_from_keyserver( files_struct *fsp, unsigned char *key )
 	KeyRes_T *res;
 	ssize_t res_len;
 
-	unsigned char *de_key;
+	unsigned char *de_key = NULL;
 
 	struct sockaddr_in s_add,c_add; // 存储服务端和本端的ip、端口等信息结构体
 	unsigned short portnum = SERVER_PORT;  // 服务端使用的通信端口，可以更改，需和服务端相同
@@ -108,22 +144,44 @@ ssize_t get_key_from_keyserver( files_struct *fsp, unsigned char *key )
 	log_file("connect ok !\r\n");
 	
 	//////////////////////////////////////////////
-	char * host_name = fsp->conn->sconn->remote_hostname;
+	//char * host_name = fsp->conn->sconn->remote_hostname;
 	//uint32_t hostname_size = strlen(host_name);
-	char * file_name = fsp_str_dbg(fsp);
+	//char * file_name;
+	//file_name = (char *)malloc( strlen(fsp_str_dbg(fsp)) );
+	//memset( file_name, 0, strlen(fsp_str_dbg(fsp)) );
+	//memcpy( file_name, fsp_str_dbg(fsp), strlen(fsp_str_dbg(fsp)) );
 	//uint32_t filename_size = strlen(file_name);
+
+	//int fd = fsp->fh->fd;
+	//uint64_t devid = hton64( fsp->file_id.devid );
+	//uint64_t inode = hton64( fsp->file_id.inode );
+	//uint64_t extid = hton64( fsp->file_id.extid );
+	//uint16_t buf_pos = 0;
 	//////////////////////////////////////////////
-	
+
 	req = (KeyReq_T *)malloc(KEY_REQ_MAX);
 	memset( (unsigned char *)req, 0, KEY_REQ_MAX );
 
 	req->type = KEY_REQ_TYPE;
-	req->un_len = strlen( host_name );
-	req->fn_len = strlen( file_name );
-	memcpy( req->buf, host_name, strlen(host_name));
-	memcpy( req->buf+req->un_len, file_name, strlen(file_name) );
+	//req->un_len = strlen( host_name );
+	//req->fn_len = strlen( file_name );
 
-	req_len = 1+1+1+ strlen(host_name) + strlen(file_name);
+	req->devid = hton64( fsp->file_id.devid );
+	req->inode = hton64( fsp->file_id.inode );
+	req->extid = hton64( fsp->file_id.extid );
+	//memcpy( req->buf, file_name, req->fn_len );
+	/*
+	memcpy( req->buf + buf_pos, file_name, req->fn_len );
+	buf_pos += req->fn_len;
+	memcpy( req->buf + buf_pos, &devid, sizeof(uint64_t) );
+	buf_pos += sizeof(uint64_t);
+	memcpy( req->buf + buf_pos, &inode, sizeof(uint64_t) );
+	buf_pos += sizeof(uint64_t);
+	memcpy( req->buf + buf_pos, &extid, sizeof(uint64_t) );
+	buf_pos += sizeof(uint64_t);
+	*/
+	req_len = 1 + 8 + 8 + 8;
+	//req_len = 1 + 1 + 8 + 8 + 8 + req->fn_len;
 
 	// 这里使用write向server发送信息
 	ret = write( cfd, (unsigned char *)req, req_len );
@@ -132,16 +190,20 @@ ssize_t get_key_from_keyserver( files_struct *fsp, unsigned char *key )
 		return -1;
 	}
 	log_file("write ok!\r\n");
+	//log_file("file_name :");
+	//log_file( file_name );
 
 	free(req);
 	req = NULL;
+	//free(file_name);
+	//file_name = NULL;
 
-
+	//
 	res = (KeyRes_T *)malloc(KEY_RES_MAX);
 	memset( (unsigned char *)res, 0, KEY_RES_MAX );
 
-	//de_key = (unsigned char *)malloc(KEY_SIZE);
-	//memset( de_key, 0, KEY_SIZE );
+	de_key = (unsigned char *)malloc(EN_KEY_SIZE);
+	memset( de_key, 0, EN_KEY_SIZE );
 
 	// 连接成功,从服务端接收字符
 	res_len = read(cfd, (unsigned char *)res, KEY_RES_MAX);
@@ -163,19 +225,32 @@ ssize_t get_key_from_keyserver( files_struct *fsp, unsigned char *key )
 	}
 	log_file("read ok\r\nREC:\r\n");
 
+	log_file( "before decrypt:" );
+	log_file( "buf :" );
 	log_file( res->buf );
+	log_file( "key :" );
 	log_file( key );
+	log_file( "de_key :" );
+	log_file( de_key );
 	// rsa decrypt
 	ret = rsa_decrypt( res->buf, de_key );
-	free(res);
-	res = NULL;
-	if( ret != KEY_SIZE ){
+	if( ret == -1 ){
+		log_file( "Decrypt Error !" );
+		return -1;
+	}
+	if( ret != EN_KEY_SIZE ){
 		printf("key length error!\n");
 		return -1;
 	}
 	memcpy( key, de_key, KEY_SIZE );
-	printf( "after decrypt:%s\n", key );
+	log_file( "after decrypt:" );
+	log_file( "key :" );
+	log_file( key );
+	log_file( "de_key :" );
+	log_file( de_key );
 
+	free(res);
+	res = NULL;
 	free(de_key);
 	de_key = NULL;
 

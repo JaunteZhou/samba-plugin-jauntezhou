@@ -15,7 +15,6 @@
 #include "smbd/globals.h"
 #include "smbprofile.h"
 
-
 #include <openssl/aes.h>  
 #include <openssl/rand.h>
 
@@ -128,24 +127,27 @@ write_file_hook(files_struct *fsp,
 	if( pos == 0 || pos == -1 || fsp->key == NULL ){
 		fsp->key = (unsigned char *)malloc(KEY_SIZE);
 		memset( fsp->key, 0, KEY_SIZE );
-		log_file( "when pos = 0, get key Start !\n\n" );
+		log_file( "WHF :\t when pos = 0, get key Start !" );
 		ret = get_key_from_keyserver( fsp, fsp->key );
+
+		log_file( "WFH :\t get key :" );
+		log_file( fsp->key );
 	}
 
-	log_file( "WFH :\t write_file_hook Start !\n\n" );
+	log_file( "WFH :\t write_file_hook Start !" );
 
 	//wtd_block_num = file_pos_src / EN_BLOCK_SIZE;
 	file_pos_last = (file_pos_src / EN_BLOCK_SIZE) * EN_BLOCK_SIZE;
 
 	if( file_pos_src == -1 ) {
 		file_pos_last = -1;
-		log_file( "WFH :\t write_file_hook Start ! pos == -1\n\n" );
+		log_file( "WFH :\t write_file_hook Start ! pos == -1" );
 	} else if ( file_pos_src == 0 ){
 		file_pos_last = 0;
-		log_file( "WFH :\t write_file_hook Start ! pos == 0\n\n" );
+		log_file( "WFH :\t write_file_hook Start ! pos == 0" );
 	}
 
-	log_file( "WFH :\t write_file_hook Start write data !\n\n" );
+	//log_file( "WFH :\t write_file_hook Start write data !" );
 	while( file_n_rest > 0 ){
 		if ( file_pos_src > file_pos_last ){
 			wtd_data_len = file_pos_src - file_pos_last;
@@ -175,23 +177,23 @@ write_file_hook(files_struct *fsp,
 		}
 		//when wtd_data_len == 0, memcpy( plain_data , data + ret_sum, file_n_wt );
 		memcpy( plain_data + wtd_data_len, data + ret_sum, file_n_wt - wtd_data_len );
-		log_file( "WFH :\t Start encrypt data !\n\n" );
+		//log_file( "WFH :\t Start encrypt data !\n\n" );
 
 		encrypt_hook( encrypted_data, plain_data, file_n_wt, fsp->key );
 
-		log_file( "WFH :\t Start write to cashe !\n\n" );
+		//log_file( "WFH :\t Start write to cashe !\n\n" );
 
 		/*step4: 数据存盘 */
 		if (file_pos_last == -1) {
-			log_file( "WFH :\t Start write from beginning !\n\n" );
+			//log_file( "WFH :\t Start write from beginning !\n\n" );
 			//从文件开头写
     			ret = vfs_write_data(NULL, fsp, encrypted_data, file_n_wt);
 		} else {
-			log_file( "WFH :\t Start write from middle !\n\n" );
+			//log_file( "WFH :\t Start write from middle !\n\n" );
     			//从偏移量‘pos’开始写
 			ret = vfs_pwrite_data(NULL, fsp, encrypted_data, file_n_wt, file_pos_last);
 		}
-		log_file( "WFH :\t write to cashe End !\n\n" );
+		//log_file( "WFH :\t write to cashe End !\n\n" );
 
 		//xie ru cuo wu huo xie ru bu wanzheng
 		if (ret == -1) {
@@ -201,7 +203,7 @@ write_file_hook(files_struct *fsp,
 			log_file( "WFH ERROR :\t write error !\n\n" );
 			return -1;
 		}
-		log_file( "WFH :\t Start write a part !\n\n" );
+		//log_file( "WFH :\t Start write a part !\n\n" );
 
 		file_pos_last += file_n_wt;
 		ret_sum += (file_n_wt - wtd_data_len);
@@ -212,17 +214,13 @@ write_file_hook(files_struct *fsp,
 		free(encrypted_data);
 		encrypted_data = NULL;
 	}
-
 	log_file( "WFH :\t write_file_hook End !\n\n" );
 
-	if( fsp->fsp_name->st.st_ex_size == 1708 )
-		log_file("1708\n\n");
-	if( fsp->fsp_name->st.st_ex_size == 1714 )
-		log_file("1714\n\n");
-	if( fsp->fsp_name->st.st_ex_size == 719500 )
-		log_file("719500\n\n");
-	if( fsp->fsp_name->st.st_ex_size == 719550 )
-		log_file("719550\n\n");
+	if( fsp->fsp_name->st.st_ex_size == file_pos_last && fsp->key != NULL ){
+		log_file("WFH :\t FREE KEY !");
+		free(fsp->key);
+		fsp->key = NULL;
+	}
 	
 	return ret_sum;
 }
@@ -239,16 +237,11 @@ read_file_hook(files_struct *fsp,
 	// step1: 保存原始的数据偏移及大小
 	ssize_t	 	ret = -1;
 	ssize_t	 	ret_sum = 0;
-	//ssize_t	 	de_sum = 0;
 
-	//uint16_t	file_n_rd = 0;
-	//size_t		num_de_block = 0;
-	//size_t	 	rdd_block_num = 0;
 	size_t	 	rdd_data_len = 0;
 
 	size_t	 	file_n_src = n;
 	size_t	 	file_n_rest = n;
-	//uint16_t	file_n_last = 0;
 	uint16_t	file_n_rd = 0;
 
 	off_t	 	file_pos_src = pos;
@@ -263,18 +256,20 @@ read_file_hook(files_struct *fsp,
 	if( pos == 0 || pos == -1 || fsp->key == NULL ){
 		fsp->key = (unsigned char *)malloc(KEY_SIZE);
 		memset( fsp->key, 0, KEY_SIZE );
-		log_file( "when pos = 0, get key Start !\n\n" );
+		log_file( "RFH :\t when pos = 0, get key Start !" );
 		ret = get_key_from_keyserver( fsp, fsp->key );
+
+		log_file( "WFH :\t get key :" );
+		log_file( fsp->key );
 	}
 
-	log_file( "RFH :\t start read_file_hook ~\n\n" );
+	log_file( "RFH :\t read_file_hook Start !" );
 	
-	//rdd_block_num = file_pos_src / EN_BLOCK_SIZE;
 	file_pos_last = (file_pos_src / EN_BLOCK_SIZE) * EN_BLOCK_SIZE;
 
-	log_file( "RFH :\t start read ~\n\n" );
+	//log_file( "RFH :\t start read ~\n\n" );
 	while( file_n_rest > 0 ){
-		log_file( "RFH :\t read loop start ! ~\n\n" );
+		//log_file( "RFH :\t read loop start ! ~\n\n" );
 		if ( file_pos_src > file_pos_last ){
 			log_file( "RFH :\t start read last data ! ~\n\n" );
 			rdd_data_len = file_pos_src - file_pos_last;
@@ -291,24 +286,24 @@ read_file_hook(files_struct *fsp,
 		decrypted_data = (char *)malloc(file_n_rd);
 		memset(decrypted_data, 0, file_n_rd);
 
-		log_file( "RFH :\t start PREAD ~\n\n" );
+		//log_file( "RFH :\t start PREAD ~\n\n" );
 
 		//Read Encrypted Data
 		ret = SMB_VFS_PREAD( fsp, encrypted_data, file_n_rd, file_pos_last );
 		if ( ret != file_n_rd ) {
-			log_file( "PREAD ERROR :\t main read not enough~\n\n" );
+			log_file( "PREAD ERROR :\t read data not enough !" );
 			free(encrypted_data);
 			free(decrypted_data);
 			break;
 		}
 		if ( ret == -1 ){
-			log_file( "PREAD ERROR :\t main read none ~\n\n" );
+			log_file( "PREAD ERROR :\t read none data !" );
 			free(encrypted_data);
 			free(decrypted_data);
 			return -1;
 		}
 
-		log_file( "RFH :\t start decrypted ~\n\n" );
+		//log_file( "RFH :\t start decrypted !" );
 		//log_file( encrypted_data );
 
 		decrypt_hook( decrypted_data, encrypted_data, file_n_rd, fsp->key );
@@ -324,7 +319,13 @@ read_file_hook(files_struct *fsp,
 		free(decrypted_data);
 		decrypted_data = NULL;
 	}
-	log_file( "RFH :\t end read file hook ~\n\n" );
+	log_file( "RFH :\t read_file_hook End !" );
+
+	if( fsp->fsp_name->st.st_ex_size == file_pos_last && fsp->key != NULL ){
+		log_file("WFH : \t FREE KEY !");
+		free(fsp->key);
+		fsp->key = NULL;
+	}
 
 	return ret_sum;
 }
