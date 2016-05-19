@@ -85,16 +85,16 @@ ssize_t read_key( uint64_t devid, uint64_t inode, uint64_t extid, unsigned char 
 	printf("inode : %s\n", s);
 	memcpy( fr + buf_pos, s, ret );
 	buf_pos += ret;
-	memcpy( fr + buf_pos, "_", 1 );
-	buf_pos += 1;
+	//memcpy( fr + buf_pos, "_", 1 );
+	//buf_pos += 1;
 	// Add extid
-	memset( s, 0, FILE_ID_LEN);
-	ret = sprintf( s, "%ld", extid );
-	if ( ret == -1 )
-		return -1;
-	printf("extid : %s\n", s);
-	memcpy( fr + buf_pos, s, ret );
-	buf_pos += ret;
+	//memset( s, 0, FILE_ID_LEN);
+	//ret = sprintf( s, "%ld", extid );
+	//if ( ret == -1 )
+	//	return -1;
+	//printf("extid : %s\n", s);
+	//memcpy( fr + buf_pos, s, ret );
+	//buf_pos += ret;
 	//memcpy( fr + buf_pos, "_", 1 );
 	//buf_pos += 1;
 
