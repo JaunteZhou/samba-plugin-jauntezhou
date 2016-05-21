@@ -53,7 +53,12 @@ encrypt_hook( char *cipher_data,
 		block_num -= 1;
 	}
 	if( last_data_num ){
-		memcpy( (cipher_data+en_sum), (plain_data+en_sum), last_data_num );
+		int i = 0;
+		while( i < last_data_num ){
+			cipher_data[en_sum + i] = plain_data[en_sum + i] ^ rkey[i];
+			i += 1;
+		}
+		//memcpy( (cipher_data+en_sum), (plain_data+en_sum), last_data_num );
 		en_sum += last_data_num;
 	}
 
@@ -86,7 +91,12 @@ decrypt_hook( char *plain_data,
 		block_num -= 1;
 	}
 	if( last_data_num ){
-		memcpy( (plain_data+de_sum), (cipher_data+de_sum), last_data_num );
+		int i = 0;
+		while( i < last_data_num ){
+			plain_data[de_sum + i] = cipher_data[de_sum + i] ^ rkey[i];
+			i += 1;
+		}
+		//memcpy( (plain_data+de_sum), (cipher_data+de_sum), last_data_num );
 		de_sum += last_data_num;
 	}
 
@@ -105,18 +115,12 @@ write_file_hook(files_struct *fsp,
 	// step1: 保存原始的数据偏移及大小
 	ssize_t	 	ret = -1;
 	ssize_t		ret_sum = 0;
-	//ssize_t		en_sum = 0;
 	uint16_t 	file_n_wt = 0;
-	//uint16_t	file_n_wt = 0;
-	//size_t		en_block_num = 0;
 	size_t		file_n_rest = n;
 	size_t	 	file_n_src = n;
-	//uint16_t	file_n_last = 0;
 	
 	off_t 		file_pos_src = pos;
 	off_t 		file_pos_last;
-	//size_t		wtd_block_num;
-	//size_t		num_block_wting = 0;
 
 	size_t		wtd_data_len = 0;
 
@@ -136,7 +140,6 @@ write_file_hook(files_struct *fsp,
 
 	log_file( "WFH :\t write_file_hook Start !" );
 
-	//wtd_block_num = file_pos_src / EN_BLOCK_SIZE;
 	file_pos_last = (file_pos_src / EN_BLOCK_SIZE) * EN_BLOCK_SIZE;
 
 	if( file_pos_src == -1 ) {
